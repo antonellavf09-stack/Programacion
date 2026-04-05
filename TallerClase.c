@@ -96,6 +96,7 @@ int main()
             }
 
             break;
+            
             // Venta de producto
         case 2:
             // Validacion de registro de producto
