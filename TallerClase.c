@@ -1,12 +1,17 @@
+// Taller de Programacion - Ejercicio 1
+// Programa para gestionar el inventario y ventas de un producto en una tienda
 #include <stdio.h>
 
 int main()
 {
+    // Declaracion de variables
     char ID[10];
     char nombre[30], continuar, aplicar, op;
     int stock, opc, cantidad, relleno;
     int registro = 0;
     float precio, totalprecio = 0, descuento, subtotal, montodescuento, total;
+
+    // Menu de opciones
     do
     {
         printf("-------------------Menu---------------------\n");
@@ -20,14 +25,18 @@ int main()
         printf(">> ");
         scanf("%d", &opc);
 
+        // Validacion de opciones
+
         if (opc < 1 || opc > 6)
         {
             printf("No hay opcion valida. Ingrese nuevamente: ");
             scanf("%d", &opc);
         }
 
+        // Switch para cada opcion del menu
         switch (opc)
         {
+            // Registro de producto
         case 1:
 
             printf("Ingrese el ID del producto: ");
@@ -40,6 +49,8 @@ int main()
             printf("Ingrese el stock del producto: ");
             scanf("%d", &stock);
 
+            // Validacion de stock negativo
+
             if (stock < 0)
             {
                 printf("No hay stock negativo. Ingrese de nuevo: ");
@@ -49,6 +60,8 @@ int main()
             printf("Ingrese el precio del producto: ");
             scanf("%f", &precio);
 
+            // Validacion de precio negativo
+
             if (precio < 0)
             {
                 printf("Precio negativo. Ingrese nuevamente: ");
@@ -57,7 +70,10 @@ int main()
             registro = 1;
             break;
 
+            // Consulta de informacion del producto
         case 4:
+
+            // Validacion de registro de producto
 
             if (registro == 0)
             {
@@ -69,6 +85,7 @@ int main()
                     opc = 1;
                 }
             }
+            // Mostrar informacion del producto
             else
             {
                 printf("Producto:\n");
@@ -79,8 +96,9 @@ int main()
             }
 
             break;
-
+            // Venta de producto
         case 2:
+            // Validacion de registro de producto
 
             if (registro == 0)
             {
@@ -89,9 +107,11 @@ int main()
                 printf("Redirigiendo al Menu...\n");
                 break;
             }
-
+            // Proceso de venta
             do
             {
+                // Validacion de cantidad a vender
+
                 do
                 {
                     printf("Ingrese la cantidad que desea vender: ");
@@ -110,8 +130,12 @@ int main()
 
                 subtotal = cantidad * precio;
 
+                // Aplicar descuento
+
                 printf("Desea agregar un descuento a la venta del producto? (s/n)\n");
                 scanf(" %c", &aplicar);
+
+                // Validacion de aplicacion de descuento
 
                 if (aplicar == 's' || aplicar == 'S')
                 {
@@ -126,9 +150,12 @@ int main()
                 }
                 else
                 {
+                    // Si no se aplica descuento, el total es igual al subtotal
                     total = subtotal;
                     printf("Total con sin descuento: %.2f\n", subtotal);
                 }
+
+                // Actualizar total de ganancias y stock
 
                 totalprecio += total;
 
@@ -137,13 +164,18 @@ int main()
                 printf("Venta realizada.\n");
                 printf("El stock restante es: %d\n", stock);
 
+                // Validacion de continuar con otra venta
+
                 printf("Desea realizar otra venta? (s/n): \n");
                 scanf(" %c", &continuar);
 
             } while (continuar == 's' || continuar == 'S');
 
             break;
+            // Reabastecer producto
         case 3:
+
+            // Validacion de registro de producto
 
             if (registro == 0)
             {
@@ -152,8 +184,12 @@ int main()
                 break;
             }
 
+            // Proceso de reabastecimiento
+
             printf("Ingrese la cantidad que desea reabastecer: ");
             scanf("%d", &relleno);
+
+            // Validacion de cantidad a reabastecer
 
             if (relleno < 0)
             {
@@ -161,31 +197,44 @@ int main()
                 scanf("%d", &relleno);
             }
 
+            // Actualizar stock con la cantidad reabastecida
+
             stock += relleno;
 
             printf("Su stock ha sido reabastecido.\n");
             printf("El stock ahora cuenta con: %d\n", stock);
 
             break;
+            // Consulta de ganancias
         case 5:
 
+            // Validacion de registro de producto
             if (totalprecio == 0)
             {
+                // Si no se han realizado ventas, el total de ganancias es 0
+
                 printf("Aun no se han realizado ventas.\n");
             }
             else
             {
+                // Mostrar total de ganancias
+
                 printf("Su total de ganancia es %.2f\n", totalprecio);
             }
 
             break;
-
+            // Salir del programa
         case 6:
+
+            // Mensaje de despedida
 
             printf("Gracias por usar el programa.");
             break;
 
         default:
+
+            // Si se ingresa una opcion no valida, se muestra un mensaje de error y se solicita ingresar nuevamente
+
             printf("No existe la opcion.\n");
             printf(">> ");
             scanf("%d", &opc);
