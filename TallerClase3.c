@@ -2,32 +2,44 @@
 #define Num_Alumno 5
 #define Num_Notas 3
 
-float alumno[Num_Alumno][Num_Notas];
-float prom[Num_Alumno]={0.0};
+float calificacion[5][3][3];
+float nombres[5][20];
+char asignaturas[3][20] = ("Matematicas","Fisica", "Quimica");
 
-int main(){
+int opc = 0, opc2 = 2;
+int contAlumnos = 0;
 
-   for(int i = 0; i < Num_Alumno; i++ ){
-    for(int j = 0; j < Num_Notas; j++){
+int main()
+{
 
-        printf("Estudiante %d:\n",i + 1);
-        printf("Ingrese la nota del estudiante %d:", j + 1);
-        scanf("%f", &alumno[j][i]);
-    }
-   }
-   for (int i = 0; i < Num_Notas; i++){
+    do
+    {
         
-       for (j = 0; j < Num_Alumno; j++){
+        printf("\tSellecione una opcion:\n");
+        printf ("\t1. Registrar alumno\n");
+        printf ("\t2. Registar calificaciones\n");
+        printf("\n3. Promedio por alumno\n");
+        printf("\t4. Promedio por asignacion\n");
+        printf("\t5. Calificacion mas alta y baja por estudiante\n");
+        printf("\t6. Calificacion mas alta y baja por estudiante\n");
+        printf("\t7. Estudiantes aprobados y reprobados por asignatura\n");
+        printf(">> ");
+        scanf("%d", &opc);
 
-        prom[j] += alumno[i][j];
-    }
-}
-    for(int i = 0; i < Num_Alumno; i++){
-        
-        prom[i]/=Num_Notas;
-        printf("El promedio del alumno %d es: %.2f\n", i + 1, prom[i]);
-    }
-   }
-    
+        switch (opc)
+        {
+            case 1:
+
+            printf("Ingrese el nombre del alumno %d: ", contAlumnos + 1);
+            getchar();// Limpiar el buffer de entrada
+            fgets(nombres[contAlumnos], 20, stdin);
+            contAlumnos++;
+            
+            
+            break;
+        }
+
+    } while (opc2 == 1);
+
  return 0;
 }

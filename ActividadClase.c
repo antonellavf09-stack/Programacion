@@ -3,7 +3,7 @@
 
 float tiempos[Max_Vehiculos];
 int puestos[Max_Vehiculos];
-int total;
+int total;  
 
 int main()
 {

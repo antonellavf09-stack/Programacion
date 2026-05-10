@@ -1,19 +1,29 @@
+//Taller de Programacion - Ejercicio 2
 #include <stdio.h>
 
 int main(int argc, char const *argv[])
 {
+    // Arreglo de calificaciones: [alumno][asignatura][nota]                                  
     float calificacion[5][3][3] = {0.0};
+
+    // Nombres de hasta 5 alumnos
     char nombres[5][20];
+
+    // Asignaturas manejadas
     char asignaturas[3][20] = {"Matematicas", "Fisica", "Quimica"};
+
+    // Promedios por alumno y asignatura
     float promedios[5][3];
+
+    // Bandera para saber si ya se registró al menos un estudiante
     int registro = 0;
 
-    int opc = 0, opc2 = 0;
-    int contAlumnos = 0;
+    int opc = 0, opc2 = 0; // Opción del menú y control de repetición
+    int contAlumnos = 0; // Contador de alumnos registrados
 
     do
     {
-
+        // Mostrar el menú principal de opciones
         printf("\tSelecione una opcion:\n");
         printf("\t1. Registrar alumno\n");
         printf("\t2. Registar calificaciones\n");
@@ -37,16 +47,16 @@ int main(int argc, char const *argv[])
         switch (opc)
         {
         case 1:
-
+            // Registrar nombre de un nuevo alumno
             printf("Ingrese el nombre del alumno %d: ", contAlumnos + 1);
             getchar(); // Limpiar el buffer de entrada
             fgets(nombres[contAlumnos], 20, stdin);
             contAlumnos++;
-
+            registro = 1; // Ya hay al menos un alumno registrado
             break;
 
         case 2:
-
+            // Registrar calificaciones para un alumno existente
             if (registro == 0)
             {
                 printf("\tPrimero debe registar estudiantes. Seleccione 1 para registro.\n");
@@ -72,9 +82,9 @@ int main(int argc, char const *argv[])
                     printf("Nota %d: ", j + 1);
                     scanf("%f", &calificacion[selA][i][j]);
 
-                    if (calificacion[selA][i][j] < 0 && calificacion[selA][i][j] > 10)
+                    while (calificacion[selA][i][j] < 0 || calificacion[selA][i][j] > 10)
                     {
-                        printf("No se pueden ingresar negativos ni mayores a 10.");
+                        printf("No se pueden ingresar negativos ni mayores a 10. Ingrese de nuevo:\n");
                         printf(">> ");
                         scanf("%f", &calificacion[selA][i][j]);
                     }
@@ -84,7 +94,7 @@ int main(int argc, char const *argv[])
             }
             break;
         case 3:
-
+            // Mostrar los promedios por alumno
             if (registro == 0)
             {
                 printf("\tPrimero debe registar estudiantes. Seleccione 1 para registro.\n");
@@ -100,7 +110,7 @@ int main(int argc, char const *argv[])
             }
             break;
         case 4:
-
+            // Calcular promedio general por cada asignatura
             if (registro == 0)
             {
                 printf("\tPrimero debe registar estudiantes. Seleccione 1 para registro.\n");
@@ -135,7 +145,7 @@ int main(int argc, char const *argv[])
                 float mayor = promedios[0][i];
                 float menor = promedios[0][i];
 
-                for (int j = 1; j < 3; j++)
+                for (int j = 1; j < contAlumnos; j++)
                 {
                     if (promedios[j][i] > mayor)
                     {
@@ -149,15 +159,16 @@ int main(int argc, char const *argv[])
                 }
                 printf("%s -> Mayor: %.2f      |    %s -> Menor: %.2f", asignaturas[i], mayor, menor);
             }
+            break;
         case 6:
-
+            // Calcular la mayor y menor nota para cada estudiante
             if (registro == 0)
             {
                 printf("\tPrimero debe registar estudiantes. Seleccione 1 para registro.\n");
                 break;
             }
 
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < contAlumnos; i++)
             {
                 float mayor = promedios[i][0];
                 float menor = promedios[i][0];
@@ -179,7 +190,7 @@ int main(int argc, char const *argv[])
 
             break;
         case 7:
-
+            // Contar aprobados y reprobados por asignatura
             if (registro == 0)
             {
                 printf("\tPrimero debe registar estudiantes. Seleccione 1 para registro.\n");
@@ -206,7 +217,8 @@ int main(int argc, char const *argv[])
 
             break;
 
-        Default:
+        default:
+            // Manejar opción de menú inválida
             printf("Opcion no valida. Ingrese de nuevo.");
             printf(">> ");
             printf("\n");

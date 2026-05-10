@@ -1,0 +1,5 @@
+variable dentro de una funcion -> variable local
+arreglo -> espacio de memoria
+
+
+mira una impresora de fotos pequena
