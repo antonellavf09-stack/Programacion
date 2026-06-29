@@ -490,7 +490,10 @@ void monitoreoActual(Zona *zonas, int n)
         else if (zonas[i].nMediciones > 0)
         {
             m = &zonas[i].historial[zonas[i].nMediciones - 1];
-            printf("|  Fuente: ultima medicion del historial               |\n");
+            printf("|  AVISO: NO se ingreso medicion de hoy (opcion 2).    |\n");
+            printf("|  Los valores mostrados corresponden al dia %2d del   |\n", m->dia);
+            printf("|  historial. Los promedios de los 30 dias en esta     |\n");
+            printf("|  zona fueron calculados SIN la lectura del dia actual.|\n");
         }
         else
         {
@@ -557,6 +560,15 @@ void calcularPromedios(Zona *zonas, int n)
         float avgNO2  = sumNO2  / dias;
         float avgPM25 = sumPM25 / dias;
 
+        // Aviso claro si el usuario no ha ingresado la medicion del dia actual
+        if (!zonas[i].hayMedicionHoy)
+        {
+            printf("+------------------------------------------------------+\n");
+            printf("|  AVISO: los promedios de los %2d dias en esta zona    |\n", dias);
+            printf("|  fueron calculados SIN la lectura de datos del dia   |\n");
+            printf("|  actual. Para incluir hoy use la opcion 2 del menu.  |\n");
+            printf("+------------------------------------------------------+\n");
+        }
         printf("| Dias en historial: %-4d                                |\n", dias);
         printf("+--------------+-----------+-----------+--------+--------+\n");
         printf("| Contaminante | Promedio  | Lim TULSMA| Estado | %% Lim  |\n");
@@ -739,142 +751,426 @@ void mostrarPredicciones(Zona *zonas, int n, Prediccion *preds, int *nPreds)
     }
 }
 
+// ============================================================
+// SECCION 6: RECOMENDACIONES DE MITIGACION
+// ============================================================
+
 // ------------------------------------------------------------
-// Genera recomendaciones de mitigacion por zona
-// Considera 4 dimensiones:
-//   AMBIENTAL  - reduccion de emisiones en la fuente
-//   SOCIAL     - proteccion de grupos vulnerables y poblacion
-//   CULTURAL   - habitos urbanos, transporte, consumo
-//   GLOBAL     - cumplimiento normativo y coordinacion interinstitucional
-// Las recomendaciones se activan segun el contaminante que excede
-// y se refuerzan si hay alerta de manana
+// Imprime el encabezado de un bloque de contaminante con
+// el nombre de la zona, el contaminante, valor medido,
+// limite TULSMA y porcentaje del limite
+// ------------------------------------------------------------
+static void recCabecera(const char *zona, const char *cont,
+                        float valor, float limite)
+{
+    float pct = (valor / limite) * 100.0f;
+    printf("+----------------------------------------------------------------+\n");
+    printf("| Zona: %-15s  Contaminante: %-20s  |\n", zona, cont);
+    printf("| Medido hoy: %8.2f ug/m3  Limite TULSMA: %6.0f  (%.1f%% del lim) |\n",
+           valor, limite, pct);
+    printf("+----+------------------------------------------------------------+\n");
+    printf("| DIM| Recomendacion especifica                                   |\n");
+    printf("+----+------------------------------------------------------------+\n");
+}
+
+// ------------------------------------------------------------
+// Genera recomendaciones completamente dinamicas:
+// - El texto de cada recomendacion incluye el NOMBRE de la zona,
+//   el VALOR exacto medido, los datos climaticos y el nivel
+//   de riesgo calculado como porcentaje del limite TULSMA.
+// - Los cuatro aspectos (AM/SO/CU/GL) siempre estan presentes.
+// - Tres niveles de intensidad segun pct del limite:
+//     <= 60%  : preventivo (no se imprime bloque de alerta)
+//     61-100% : alerta moderada
+//     > 100%  : critico / accion inmediata
 // ------------------------------------------------------------
 void generarRecomendaciones(Zona *zonas, int n, Prediccion *preds, int nPreds)
 {
     if (n == 0) { printf("  No hay zonas registradas.\n"); return; }
 
     printf("\n");
-    printf("+==============================================================+\n");
-    printf("|         RECOMENDACIONES DE MITIGACION                       |\n");
-    printf("|  Dimensiones: Ambiental | Social | Cultural | Global        |\n");
-    printf("+==============================================================+\n");
+    printf("+================================================================+\n");
+    printf("|        RECOMENDACIONES DE MITIGACION  SIGPCAZU                |\n");
+    printf("|  Basadas en valores medidos HOY - TULSMA Libro VI Anexo 4     |\n");
+    printf("|  AM=Ambiental  SO=Social  CU=Cultural  GL=Global              |\n");
+    printf("+================================================================+\n");
 
     for (int i = 0; i < n; i++)
     {
-        if (!zonas[i].hayMedicionHoy) continue;
+        if (!zonas[i].hayMedicionHoy)
+        {
+            printf("\n+----------------------------------------------------------------+\n");
+            printf("| Zona [%d] %-20s : sin medicion de hoy.          |\n",
+                   zonas[i].id, zonas[i].nombre);
+            printf("| Ingrese los datos del dia actual mediante la opcion 2.         |\n");
+            printf("+----------------------------------------------------------------+\n");
+            continue;
+        }
 
         Medicion *m   = &zonas[i].hoy;
-        int       rec = 0; // Bandera: al menos una recomendacion emitida
+        char     *z   = zonas[i].nombre;   // Alias corto para usar en printf
+        float     tmp = zonas[i].temperatura;
+        float     vie = zonas[i].viento;
+        float     hum = zonas[i].humedad;
+        int       rec = 0;
 
-        printf("\n+--------------------------------------------------------------+\n");
-        printf("| ZONA [%d] %-50s |\n", zonas[i].id, zonas[i].nombre);
-        printf("+--------------------------------------------------------------+\n");
+        // Calcular porcentajes del limite para determinar el nivel de riesgo
+        float pctCO   = (m->co   / LIMITE_CO)   * 100.0f;
+        float pctSO2  = (m->so2  / LIMITE_SO2)  * 100.0f;
+        float pctNO2  = (m->no2  / LIMITE_NO2)  * 100.0f;
+        float pctPM25 = (m->pm25 / LIMITE_PM25) * 100.0f;
 
-        // ---- CO ALTO ---------------------------------------------------
-        if (m->co > LIMITE_CO)
+        // Encabezado de zona con resumen de datos del dia
+        printf("\n+================================================================+\n");
+        printf("| ZONA [%d] %-56s |\n", zonas[i].id, z);
+        printf("| Datos climaticos de hoy:  Temp=%.1fC  Viento=%.1fkm/h  Hum=%.1f%% |\n",
+               tmp, vie, hum);
+        printf("| CO=%.1f(%.0f%%)  SO2=%.1f(%.0f%%)  NO2=%.1f(%.0f%%)  PM2.5=%.1f(%.0f%%)    |\n",
+               m->co,   pctCO,
+               m->so2,  pctSO2,
+               m->no2,  pctNO2,
+               m->pm25, pctPM25);
+        printf("+================================================================+\n");
+
+        // ==============================================================
+        // BLOQUE CO
+        // ==============================================================
+        if (pctCO > 60.0f)
         {
-            printf("| [CO ALTO]                                                    |\n");
-            printf("+----+--------------------------------------------------------+\n");
-            printf("| AM | Restringir circulacion de vehiculos en zonas de alto   |\n");
-            printf("|    | trafico; prohibir quema de residuos solidos urbanos.   |\n");
-            printf("| SO | Alertar a pacientes con enfermedades cardiovasculares  |\n");
-            printf("|    | y EPOC; evitar exposicion prolongada al exterior.      |\n");
-            printf("| CU | Promover teletrabajo y uso de transporte no motorizado |\n");
-            printf("|    | (bicicleta, caminata) en dias de alta contaminacion.   |\n");
-            printf("| GL | Notificar al MAATE segun Art. 6 TULSMA; coordinar     |\n");
-            printf("|    | operativos con AMT y Municipio para control vehicular. |\n");
-            printf("+----+--------------------------------------------------------+\n");
+            recCabecera(z, "CO - Monoxido de Carbono", m->co, LIMITE_CO);
             rec = 1;
+
+            if (pctCO <= 100.0f)
+            {
+                // Nivel moderado: 61-100% del limite
+                printf("| AM | En %s el CO llego a %.0f ug/m3 (%.0f%% del limite). Se   |\n", z, m->co, pctCO);
+                printf("|    | debe reducir la velocidad en vias de alto trafico para    |\n");
+                printf("|    | bajar las emisiones de escape vehicular en la zona.       |\n");
+                printf("| AM | Revisar que los vehiculos de transporte publico que       |\n");
+                printf("|    | circulan en %s cuenten con revision tecnica vigente.  |\n", z);
+                printf("| SO | Alertar a residentes de %s con problemas cardiacos     |\n", z);
+                printf("|    | y EPOC que eviten actividad fisica al exterior hoy,       |\n");
+                printf("|    | ya que %.0f ug/m3 de CO puede causar cefalea y mareo.    |\n", m->co);
+                printf("| SO | Notificar a los centros de salud cercanos a %s sobre  |\n", z);
+                printf("|    | el nivel de CO registrado para preparar atencion a        |\n");
+                printf("|    | posibles casos de intoxicacion leve durante el dia.      |\n");
+                printf("| CU | Difundir en grupos comunitarios de %s la recomendacion|\n", z);
+                printf("|    | de usar transporte publico o bicicleta hoy; el CO alto   |\n");
+                printf("|    | indica exceso de vehiculos particulares en la zona.      |\n");
+                printf("| CU | Publicar en redes del municipio el valor de %.0f ug/m3   |\n", m->co);
+                printf("|    | para que la ciudadania de %s tome decisiones de         |\n", z);
+                printf("|    | movilidad consciente durante el resto del dia.           |\n");
+                printf("| GL | Activar el protocolo de monitoreo continuo de CO segun   |\n");
+                printf("|    | TULSMA Anexo 4; registrar el evento en el informe diario |\n");
+                printf("|    | de la red de calidad del aire de la zona %s.           |\n", z);
+                printf("| GL | Compartir el dato de %.0f ug/m3 con la red del MAATE    |\n", m->co);
+                printf("|    | para analisis interinstitucional; si la tendencia sube   |\n");
+                printf("|    | escalar a alerta segun el Acuerdo Ministerial 097-A.    |\n");
+            }
+            else
+            {
+                // Nivel critico: supera el limite TULSMA
+                printf("| AM | URGENTE en %s: CO=%-.0f supera el limite (10000 ug/m3). |\n", z, m->co);
+                printf("|    | Restringir circulacion vehicular de inmediato; implementar|\n");
+                printf("|    | pico y placa extendido y cerrar fuentes de combustion.   |\n");
+                printf("| AM | Suspender quema de residuos, incineracion y uso de       |\n");
+                printf("|    | generadores a combustion en toda el area de %s hasta  |\n", z);
+                printf("|    | que el CO baje por debajo de 10000 ug/m3.               |\n");
+                printf("| SO | Activar alerta sanitaria en %s: notificar al MSP y     |\n", z);
+                printf("|    | centros de salud para atencion de intoxicacion por CO;   |\n");
+                printf("|    | el nivel de %.0f ug/m3 representa riesgo vital.         |\n", m->co);
+                printf("| SO | Evaluar evacuacion temporal de poblacion vulnerable de   |\n");
+                printf("|    | %s: ninos menores de 5, adultos mayores y embarazadas. |\n", z);
+                printf("|    | Distribuir mascarillas de carbon activado en la zona.    |\n");
+                printf("| CU | Suspender clases presenciales y eventos masivos en       |\n");
+                printf("|    | %s; la concentracion de %.0f ug/m3 es peligrosa para  |\n", z, m->co);
+                printf("|    | la salud de la poblacion en espacios al aire libre.      |\n");
+                printf("| CU | Activar campana de comunicacion de crisis en %s via   |\n", z);
+                printf("|    | radio, TV y redes; instrucciones claras de autocuidado:  |\n");
+                printf("|    | cerrar ventanas, no hacer ejercicio, usar mascarilla.    |\n");
+                printf("| GL | Notificar al COE Municipal de %s el valor de %.0f      |\n", z, m->co);
+                printf("|    | ug/m3 de CO; solicitar declaratoria de emergencia         |\n");
+                printf("|    | ambiental si el nivel se mantiene por mas de 2 horas.   |\n");
+                printf("| GL | Reportar al MAATE en maximo 24h segun AM 097-A;          |\n");
+                printf("|    | solicitar auditoria urgente de fuentes emisoras en        |\n");
+                printf("|    | la zona %s que expliquen el nivel critico registrado.  |\n", z);
+            }
+            printf("+----+------------------------------------------------------------+\n");
         }
 
-        // ---- SO2 ALTO --------------------------------------------------
-        if (m->so2 > LIMITE_SO2)
+        // ==============================================================
+        // BLOQUE SO2
+        // ==============================================================
+        if (pctSO2 > 60.0f)
         {
-            printf("| [SO2 ALTO]                                                   |\n");
-            printf("+----+--------------------------------------------------------+\n");
-            printf("| AM | Reducir actividad en plantas industriales y centrales  |\n");
-            printf("|    | termicas; inspeccionar chimeneas y quemadores.         |\n");
-            printf("| SO | Proteger a ninos, adultos mayores y personas con asma; |\n");
-            printf("|    | mantener ventanas cerradas en zonas afectadas.         |\n");
-            printf("| CU | Fomentar auditorias energeticas en industrias locales; |\n");
-            printf("|    | sensibilizar a empresas sobre combustibles limpios.    |\n");
-            printf("| GL | Revisar permisos de operacion industrial (MAE-RA);    |\n");
-            printf("|    | aplicar planes de reduccion progresiva de SO2.        |\n");
-            printf("+----+--------------------------------------------------------+\n");
+            recCabecera(z, "SO2 - Dioxido de Azufre", m->so2, LIMITE_SO2);
             rec = 1;
+
+            if (pctSO2 <= 100.0f)
+            {
+                printf("| AM | En %s el SO2 alcanzo %.1f ug/m3 (%.0f%% del limite de   |\n", z, m->so2, pctSO2);
+                printf("|    | 350 ug/m3). Solicitar a industrias de la zona reportes    |\n");
+                printf("|    | de operacion de sus sistemas de control de emisiones.     |\n");
+                printf("| AM | Con %.1f ug/m3 de SO2 y viento de %.0f km/h en %s,    |\n", m->so2, vie, z);
+                printf("|    | revisar el estado de filtros en plantas que usen          |\n");
+                printf("|    | combustibles con alto contenido de azufre en la zona.    |\n");
+                printf("| SO | Alertar a personas con asma en %s: %.1f ug/m3 de SO2  |\n", z, m->so2);
+                printf("|    | puede desencadenar crisis respiratoria; evitar salir      |\n");
+                printf("|    | entre las 10h00 y 16h00 cuando la concentracion es mayor.|\n");
+                printf("| SO | Informar a colegios y guarderias de %s que suspendan    |\n", z);
+                printf("|    | actividades al aire libre; la humedad de %.0f%% combinada |\n", hum);
+                printf("|    | con SO2 aumenta el riesgo de irritacion ocular y garganta.|\n");
+                printf("| CU | Organizar taller de concientizacion en %s con las       |\n", z);
+                printf("|    | empresas industriales: el registro de %.1f ug/m3 de SO2 |\n", m->so2);
+                printf("|    | indica necesidad de revisar combustibles usados.         |\n");
+                printf("| CU | Fomentar en la comunidad de %s la denuncia ciudadana    |\n", z);
+                printf("|    | de olores y humos industriales a traves del sistema de   |\n");
+                printf("|    | quejas ambientales del GAD Municipal.                    |\n");
+                printf("| GL | Verificar permisos ambientales de industrias en %s;    |\n", z);
+                printf("|    | el nivel de %.1f ug/m3 activa la obligacion de           |\n", m->so2);
+                printf("|    | monitoreo reforzado segun TULSMA Libro VI Anexo 4.       |\n");
+                printf("| GL | Alinear el caso de %s con el Plan Climatico Nacional   |\n", z);
+                printf("|    | y los compromisos de reduccion de SO2 del Ecuador en el  |\n");
+                printf("|    | marco del Acuerdo de Paris (NDC Ecuador 2020-2025).      |\n");
+            }
+            else
+            {
+                printf("| AM | URGENTE en %s: SO2=%.1f supera 350 ug/m3 (TULSMA).    |\n", z, m->so2);
+                printf("|    | Ordenar cierre temporal de la fuente industrial          |\n");
+                printf("|    | identificada como principal emisora en la zona.          |\n");
+                printf("| AM | Activar inspeccion tecnica urgente de la Entidad         |\n");
+                printf("|    | Ambiental de Control en %s; exigir uso de diesel con   |\n", z);
+                printf("|    | maximo 50 ppm de azufre en toda la zona afectada.        |\n");
+                printf("| SO | Coordinar con el MSP puestos de atencion rapida en       |\n");
+                printf("|    | %s para casos de irritacion ocular y respiratoria;     |\n", z);
+                printf("|    | el nivel de %.1f ug/m3 requiere atencion medica urgente.|\n", m->so2);
+                printf("| SO | Distribuir informacion puerta a puerta en barrios de     |\n");
+                printf("|    | %s sobre sintomas de SO2: tos, ardor nasal y garganta; |\n", z);
+                printf("|    | indicar donde acudir y como protegerse de inmediato.    |\n");
+                printf("| CU | Suspender todo evento masivo al aire libre en %s;      |\n", z);
+                printf("|    | generar contenido educativo sobre el origen del SO2 y   |\n");
+                printf("|    | su relacion con la lluvia acida para difusion escolar.  |\n");
+                printf("| CU | Documentar y publicar el episodio de %.1f ug/m3 en     |\n", m->so2);
+                printf("|    | %s como caso de estudio de impacto industrial en la   |\n", z);
+                printf("|    | calidad del aire para fortalecer la cultura ambiental.  |\n");
+                printf("| GL | Notificar al MAATE y a la Contraloria General sobre el   |\n");
+                printf("|    | incumplimiento en %s si la fuente tenia permiso vigente;|\n", z);
+                printf("|    | documentar el pasivo ambiental conforme al COOTAD.      |\n");
+                printf("| GL | Registrar el evento de %.1f ug/m3 de SO2 en %s en    |\n", m->so2, z);
+                printf("|    | el sistema nacional de inventario de emisiones del       |\n");
+                printf("|    | MAATE para ajuste del plan de monitoreo en la zona.     |\n");
+            }
+            printf("+----+------------------------------------------------------------+\n");
         }
 
-        // ---- NO2 ALTO --------------------------------------------------
-        if (m->no2 > LIMITE_NO2)
+        // ==============================================================
+        // BLOQUE NO2
+        // ==============================================================
+        if (pctNO2 > 60.0f)
         {
-            printf("| [NO2 ALTO]                                                   |\n");
-            printf("+----+--------------------------------------------------------+\n");
-            printf("| AM | Restringir vehiculos diesel anteriores a 2010;         |\n");
-            printf("|    | suspender obras con maquinaria pesada en hora pico.    |\n");
-            printf("| SO | Informar a escuelas y guarderias para evitar           |\n");
-            printf("|    | actividades al aire libre; distribuir mascarillas N95. |\n");
-            printf("| CU | Impulsar revision tecnica vehicular (RTV) con enfoque  |\n");
-            printf("|    | en emisiones; incentivar renovacion de flota antigua.  |\n");
-            printf("| GL | Coordinar con INER y universidades la medicion de      |\n");
-            printf("|    | NOx; alinear politicas con Agenda Ambiental Nacional.  |\n");
-            printf("+----+--------------------------------------------------------+\n");
+            recCabecera(z, "NO2 - Dioxido de Nitrogeno", m->no2, LIMITE_NO2);
             rec = 1;
+
+            if (pctNO2 <= 100.0f)
+            {
+                printf("| AM | En %s el NO2 llego a %.1f ug/m3 (%.0f%% del limite de  |\n", z, m->no2, pctNO2);
+                printf("|    | 150 ug/m3). Solicitar a la AMT intensificar operativos   |\n");
+                printf("|    | de revision tecnica vehicular (RTV) en la zona.          |\n");
+                printf("| AM | Con temperatura de %.0fC en %s las reacciones          |\n", tmp, z);
+                printf("|    | fotoquimicas son mas activas; revisar fuentes de NOx como|\n");
+                printf("|    | vehiculos diesel y maquinaria pesada en hora pico.       |\n");
+                printf("| SO | Advertir a embarazadas y ninos de %s sobre los riesgos  |\n", z);
+                printf("|    | del NO2 (%.1f ug/m3): puede afectar el desarrollo        |\n", m->no2);
+                printf("|    | pulmonar; recomendar reduccion de exposicion al exterior.|\n");
+                printf("| SO | Coordinar con centros de salud de %s el monitoreo de   |\n", z);
+                printf("|    | bronquitis y enfermedades respiratorias en menores;      |\n");
+                printf("|    | el nivel de %.1f ug/m3 requiere seguimiento clinico.    |\n", m->no2);
+                printf("| CU | Promover en %s el carpooling y el uso de ciclovias     |\n", z);
+                printf("|    | como alternativa al vehiculo individual; la lectura de   |\n");
+                printf("|    | %.1f ug/m3 indica exceso de trafico motorizado en la zona.|\n", m->no2);
+                printf("| CU | Incentivar entre los ciudadanos de %s el mantenimiento  |\n", z);
+                printf("|    | preventivo de vehiculos (afinacion, cambio de catalizador)|\n");
+                printf("|    | para reducir las emisiones de NOx desde la fuente movil. |\n");
+                printf("| GL | Coordinar con el INER programas de renovacion de flota   |\n");
+                printf("|    | antigua en %s; el nivel de %.1f ug/m3 indica vehiculos |\n", z, m->no2);
+                printf("|    | sin control de emision que deben ser retirados de vias.  |\n");
+                printf("| GL | Incorporar el dato de %.1f ug/m3 de NO2 en %s en el   |\n", m->no2, z);
+                printf("|    | inventario nacional de emisiones GEI del MAATE;          |\n");
+                printf("|    | alinear con la Agenda Ambiental Nacional vigente.        |\n");
+            }
+            else
+            {
+                printf("| AM | URGENTE en %s: NO2=%.1f supera 150 ug/m3 (TULSMA).    |\n", z, m->no2);
+                printf("|    | Restringir circulacion de vehiculos diesel de alto       |\n");
+                printf("|    | tonelaje y maquinaria pesada en toda la zona de inmediato.|\n");
+                printf("| AM | Detener obras de construccion con maquinaria a diesel en |\n");
+                printf("|    | %s; con %.0fC de temperatura el NO2 forma smog          |\n", z, tmp);
+                printf("|    | fotoquimico que agrava la exposicion de la poblacion.    |\n");
+                printf("| SO | Emitir alerta a escuelas y hospitales de %s para cerrar |\n", z);
+                printf("|    | ventanas; el nivel de %.1f ug/m3 de NO2 puede causar    |\n", m->no2);
+                printf("|    | inflamacion pulmonar aguda en exposicion prolongada.     |\n");
+                printf("| SO | Informar urgente a la poblacion de %s sobre sintomas:  |\n", z);
+                printf("|    | tos, dificultad respiratoria y ardor ocular; indicar     |\n");
+                printf("|    | los centros de atencion medica habilitados en la zona.  |\n");
+                printf("| CU | Activar campana informativa en %s: explicar que el NO2  |\n", z);
+                printf("|    | de %.1f ug/m3 con %.0fC y %.0f km/h de viento genera  |\n", m->no2, tmp, vie);
+                printf("|    | smog; reducir el auto particular es la medida principal. |\n");
+                printf("| CU | Documentar el episodio de %.1f ug/m3 en %s como caso  |\n", m->no2, z);
+                printf("|    | de estudio para talleres de educacion ambiental en       |\n");
+                printf("|    | instituciones educativas y juntas parroquiales.          |\n");
+                printf("| GL | Aplicar principio de precaucion del TULSMA: emitir       |\n");
+                printf("|    | resolucion temporal de restriccion vehicular en %s;    |\n", z);
+                printf("|    | notificar a SENPLADES para ajuste del plan de movilidad. |\n");
+                printf("| GL | Reportar el incidente de %.1f ug/m3 en %s al MAATE;   |\n", m->no2, z);
+                printf("|    | solicitar auditoria de flota vehicular y fuentes fijas   |\n");
+                printf("|    | conforme al Acuerdo Ministerial 097-A vigente.           |\n");
+            }
+            printf("+----+------------------------------------------------------------+\n");
         }
 
-        // ---- PM2.5 ALTO ------------------------------------------------
-        if (m->pm25 > LIMITE_PM25)
+        // ==============================================================
+        // BLOQUE PM2.5
+        // ==============================================================
+        if (pctPM25 > 60.0f)
         {
-            printf("| [PM2.5 ALTO]                                                 |\n");
-            printf("+----+--------------------------------------------------------+\n");
-            printf("| AM | Humedecer vias no pavimentadas; incrementar frecuencia  |\n");
-            printf("|    | de barrido y recoleccion de residuos en la zona.       |\n");
-            printf("| SO | Suspender actividades deportivas al aire libre;        |\n");
-            printf("|    | activar protocolo de atencion para grupos vulnerables. |\n");
-            printf("| CU | Campanas de educacion ambiental en colegios y medios   |\n");
-            printf("|    | de comunicacion; difundir indice de calidad del aire.  |\n");
-            printf("| GL | Emitir boletin de alerta ciudadana (MSP / MAATE);      |\n");
-            printf("|    | escalar a declaratoria de alerta amarilla si persiste. |\n");
-            printf("+----+--------------------------------------------------------+\n");
+            recCabecera(z, "PM2.5 - Particulado Fino", m->pm25, LIMITE_PM25);
             rec = 1;
+
+            if (pctPM25 <= 100.0f)
+            {
+                printf("| AM | En %s el PM2.5 alcanzo %.1f ug/m3 (%.0f%% del limite de |\n", z, m->pm25, pctPM25);
+                printf("|    | 65 ug/m3). Humectar las vias no pavimentadas de la zona   |\n");
+                printf("|    | para reducir la generacion de polvo en suspension.        |\n");
+                printf("| AM | Revisar obras de construccion activas en %s; con        |\n", z);
+                printf("|    | humedad de %.0f%% y %.0f km/h de viento el particulado   |\n", hum, vie);
+                printf("|    | se dispersa; exigir mallas y humectacion de escombros.   |\n");
+                printf("| SO | Recomendar a personas con EPOC y cardiovasculares de      |\n");
+                printf("|    | %s que limiten exposicion al exterior hoy;              |\n", z);
+                printf("|    | %.1f ug/m3 de PM2.5 penetra en alveolos pulmonares.     |\n", m->pm25);
+                printf("| SO | Publicar en las juntas parroquiales de %s el valor de  |\n", z);
+                printf("|    | %.1f ug/m3 con recomendaciones de proteccion personal;  |\n", m->pm25);
+                printf("|    | especialmente para adultos mayores y ninos escolares.   |\n");
+                printf("| CU | Educar a la comunidad de %s: PM2.5=%.1f ug/m3 no se   |\n", z, m->pm25);
+                printf("|    | percibe visualmente pero dania pulmones a largo plazo;  |\n");
+                printf("|    | fomentar el monitoreo diario del indice de calidad.     |\n");
+                printf("| CU | Impulsar jornadas de arborizado urbano en %s; los      |\n", z);
+                printf("|    | arboles capturan PM2.5 y reducen el efecto isla de calor|\n");
+                printf("|    | que con %.0fC favorece la acumulacion de particulado.   |\n", tmp);
+                printf("| GL | Coordinar con el GAD Municipal de %s barrido mecanizado |\n", z);
+                printf("|    | y limpieza de calzadas; vincular el dato de %.1f ug/m3  |\n", m->pm25);
+                printf("|    | con la red de monitoreo del MAATE para validar tendencia.|\n");
+                printf("| GL | Activar protocolo INCA (Indice Nacional de Calidad del   |\n");
+                printf("|    | Aire) para %s con valor de %.1f ug/m3; si la tendencia  |\n", z, m->pm25);
+                printf("|    | sube, escalar a alerta segun el protocolo del MAATE.    |\n");
+            }
+            else
+            {
+                printf("| AM | URGENTE en %s: PM2.5=%.1f supera 65 ug/m3 (TULSMA).   |\n", z, m->pm25);
+                printf("|    | Suspender toda obra de construccion y demolicion en la   |\n");
+                printf("|    | zona; iniciar humectacion de vias cada 2 horas.          |\n");
+                printf("| AM | Prohibir quema a cielo abierto en %s y sus alrededores; |\n", z);
+                printf("|    | con humedad de %.0f%% y %.0f km/h de viento el PM2.5   |\n", hum, vie);
+                printf("|    | de %.1f ug/m3 se acumula sin dispersarse eficientemente. |\n", m->pm25);
+                printf("| SO | Activar protocolo de atencion prioritaria en %s para   |\n", z);
+                printf("|    | grupos vulnerables: ninos menores de 12, adultos mayores |\n");
+                printf("|    | de 65 y personas con enfermedades respiratorias.         |\n");
+                printf("| SO | Distribuir mascarillas N95 en centros de salud y         |\n");
+                printf("|    | escuelas de %s; el PM2.5 de %.1f ug/m3 representa      |\n", z, m->pm25);
+                printf("|    | riesgo de dano pulmonar irreversible en exposicion larga.|\n");
+                printf("| CU | Suspender clases presenciales en %s; transmitir mensajes |\n", z);
+                printf("|    | preventivos en radio y redes sobre PM2.5=%.1f ug/m3:   |\n", m->pm25);
+                printf("|    | que hacer, que no hacer y donde buscar atencion medica. |\n");
+                printf("| CU | Activar la cultura de monitoreo ciudadano en %s:        |\n", z);
+                printf("|    | publicar el indice en tiempo real en pantallas digitales |\n");
+                printf("|    | y apps municipales; la comunidad debe conocer el riesgo. |\n");
+                printf("| GL | Emitir declaratoria de Alerta Amarilla Ambiental para    |\n");
+                printf("|    | %s con PM2.5=%.1f ug/m3 segun protocolo COE Municipal;  |\n", z, m->pm25);
+                printf("|    | notificar al MSP y activar el plan de contingencia.      |\n");
+                printf("| GL | Documentar el episodio en el Registro Ambiental Nacional;|\n");
+                printf("|    | solicitar auditoria de fuentes emisoras en %s que       |\n", z);
+                printf("|    | expliquen el nivel critico de PM2.5 registrado hoy.     |\n");
+            }
+            printf("+----+------------------------------------------------------------+\n");
         }
 
-        // ---- ALERTA MANANA (prediccion supera limites) -----------------
+        // ==============================================================
+        // TODOS LOS CONTAMINANTES DENTRO DEL LIMITE: recomendaciones
+        // preventivas tambien personalizadas con datos de la zona
+        // ==============================================================
+        if (!rec)
+        {
+            printf("+----------------------------------------------------------------+\n");
+            printf("| TODOS LOS CONTAMINANTES DENTRO DEL LIMITE TULSMA EN %s\n", z);
+            printf("+----+------------------------------------------------------------+\n");
+            printf("| AM | Los niveles en %s (CO=%.0f SO2=%.0f NO2=%.0f PM2.5=%.0f) |\n",
+                   z, m->co, m->so2, m->no2, m->pm25);
+            printf("|    | estan dentro del limite. Mantener barrido de vias y        |\n");
+            printf("|    | verificar que no haya fuentes nuevas de emision activas.   |\n");
+            printf("| AM | Con viento de %.0f km/h en %s los contaminantes se        |\n", vie, z);
+            printf("|    | dispersan bien; continuar monitoreo diario para detectar   |\n");
+            printf("|    | tendencias de subida antes de que superen el limite.       |\n");
+            printf("| SO | Aprovechar que %s tiene niveles aceptables para reforzar  |\n", z);
+            printf("|    | educacion en salud ambiental en escuelas y centros         |\n");
+            printf("|    | comunitarios: los buenos datos de hoy son un ejemplo.      |\n");
+            printf("| SO | Informar a la ciudadania de %s sobre los valores de hoy   |\n", z);
+            printf("|    | (CO=%.0f SO2=%.0f NO2=%.0f PM2.5=%.0f ug/m3) como ejemplo|\n",
+                   m->co, m->so2, m->no2, m->pm25);
+            printf("|    | de buenas practicas de gestion del aire urbano.            |\n");
+            printf("| CU | Promover en %s habitos de movilidad sostenible mientras   |\n", z);
+            printf("|    | los niveles son bajos: bicicleta, caminata, transporte     |\n");
+            printf("|    | publico; los datos buenos refuerzan el cambio cultural.    |\n");
+            printf("| CU | Organizar mingas de limpieza y arborizado urbano en %s;   |\n", z);
+            printf("|    | con temperatura de %.0fC y humedad de %.0f%% es un dia     |\n", tmp, hum);
+            printf("|    | ideal para actividades comunitarias al aire libre.         |\n");
+            printf("| GL | Registrar el cumplimiento de %s en el sistema TULSMA;     |\n", z);
+            printf("|    | los datos de CO=%.0f SO2=%.0f NO2=%.0f PM2.5=%.0f ug/m3  |\n",
+                   m->co, m->so2, m->no2, m->pm25);
+            printf("|    | demuestran efectividad de las medidas de gestion vigentes. |\n");
+            printf("| GL | Coordinar con el MAATE la actualizacion del inventario de  |\n");
+            printf("|    | fuentes emisoras de %s; los buenos resultados de hoy      |\n", z);
+            printf("|    | deben sustentarse con politicas de monitoreo continuo.     |\n");
+            printf("+----+------------------------------------------------------------+\n");
+        }
+
+        // ==============================================================
+        // ALERTA PREVENTIVA PARA MANANA (si la prediccion supera limite)
+        // Tambien personalizada con los valores predichos reales
+        // ==============================================================
         for (int j = 0; j < nPreds; j++)
         {
             if (preds[j].idZona == zonas[i].id && preds[j].alerta)
             {
-                printf("| [ALERTA MANANA - MEDIDAS PREVENTIVAS]                        |\n");
-                printf("+----+--------------------------------------------------------+\n");
-                printf("| AM | Preparar equipos de monitoreo movil para verificacion  |\n");
-                printf("|    | en campo; revisar fuentes emisoras identificadas.      |\n");
-                printf("| SO | Emitir alerta preventiva a la ciudadania con 12h de   |\n");
-                printf("|    | anticipacion; reforzar centros de salud cercanos.      |\n");
-                printf("| CU | Activar comunicacion en redes sociales institucionales |\n");
-                printf("|    | con recomendaciones de autocuidado para la poblacion.  |\n");
-                printf("| GL | Notificar al COE Municipal; coordinar acciones con     |\n");
-                printf("|    | Secretaria de Ambiente y organismos de respuesta.      |\n");
-                printf("+----+--------------------------------------------------------+\n");
-                rec = 1;
+                printf("\n+----------------------------------------------------------------+\n");
+                printf("| ALERTA PREVENTIVA PARA MANANA EN %s\n", z);
+                printf("| Prediccion: CO=%.0f | SO2=%.0f | NO2=%.0f | PM2.5=%.0f ug/m3   |\n",
+                       preds[j].co_pred, preds[j].so2_pred,
+                       preds[j].no2_pred, preds[j].pm25_pred);
+                printf("+----+------------------------------------------------------------+\n");
+                printf("| AM | Iniciar HOY en %s la reduccion de actividades emisoras   |\n", z);
+                printf("|    | para evitar que manana se superen los limites; preparar   |\n");
+                printf("|    | equipos de monitoreo movil para verificacion en campo.    |\n");
+                printf("| SO | Emitir boletin preventivo en %s con 12h de anticipacion; |\n", z);
+                printf("|    | reforzar centros de salud con personal para atencion de   |\n");
+                printf("|    | casos respiratorios esperados segun la prediccion.        |\n");
+                printf("| CU | Activar comunicacion en redes y radio de %s con         |\n", z);
+                printf("|    | recomendaciones especificas: reducir salidas, usar        |\n");
+                printf("|    | mascarilla, evitar ejercicio al aire libre manana.        |\n");
+                printf("| GL | Notificar al COE Municipal de %s los valores predichos;  |\n", z);
+                printf("|    | activar el plan de contingencia ambiental segun el        |\n");
+                printf("|    | protocolo del MAATE para episodios de alta contaminacion. |\n");
+                printf("+----+------------------------------------------------------------+\n");
                 break;
             }
         }
-
-        if (!rec)
-        {
-            printf("| Estado: todos los contaminantes dentro del limite TULSMA.   |\n");
-            printf("| Mantener monitoreo preventivo y registro diario.            |\n");
-            printf("+--------------------------------------------------------------+\n");
-        }
     }
 
-    // Leyenda de dimensiones al final
-    printf("\n");
-    printf("+--------------------------------------------------------------+\n");
-    printf("| LEYENDA DE DIMENSIONES                                       |\n");
-    printf("+----+---------------------------------------------------------+\n");
-    printf("| AM | AMBIENTAL  : reduccion de emisiones en la fuente        |\n");
-    printf("| SO | SOCIAL     : proteccion de grupos vulnerables           |\n");
-    printf("| CU | CULTURAL   : habitos urbanos, educacion, transporte     |\n");
-    printf("| GL | GLOBAL     : normativa, institucional, interagencial    |\n");
-    printf("+----+---------------------------------------------------------+\n");
+    // Leyenda al final
+    printf("\n+----------------------------------------------------------------+\n");
+    printf("| LEYENDA DE DIMENSIONES                                         |\n");
+    printf("+----+------------------------------------------------------------+\n");
+    printf("| AM | AMBIENTAL : reduccion directa de la fuente emisora         |\n");
+    printf("| SO | SOCIAL    : proteccion de la poblacion y grupos vulnerables |\n");
+    printf("| CU | CULTURAL  : educacion, habitos urbanos, participacion       |\n");
+    printf("| GL | GLOBAL    : normativa, instituciones, acuerdos nacionales   |\n");
+    printf("+----+------------------------------------------------------------+\n");
 }
