@@ -85,6 +85,7 @@ void  convertirMayuscula(char *c);
 // PROTOTIPOS: PERSISTENCIA
 // ------------------------------------------------------------
 void cargarZonas(Zona *zonas, int *n);
+int  hayAlgunaMedicionHoy(Zona *zonas, int n);  // Retorna 1 si al menos una zona tiene medicion de hoy
 void guardarZonas(Zona *zonas, int n);
 void exportarReporte(Zona *zonas, int n, Prediccion *preds, int nPreds);
 
@@ -98,10 +99,14 @@ int menuMonitoreo();
 // ------------------------------------------------------------
 // PROTOTIPOS: GESTION DE ZONAS
 // ------------------------------------------------------------
+// Minimo de dias de historial para poder calcular prediccion
+#define MIN_DIAS_PREDICCION 7
+
 void registrarZona(Zona *zonas, int *n);
 void mostrarZonas(Zona *zonas, int n);
 int  buscarZona(Zona *zonas, int n);
-void eliminarZona(Zona *zonas, int *n);
+// preds y nPreds se necesitan para limpiar predicciones huerfanas al eliminar
+void eliminarZona(Zona *zonas, int *n, Prediccion *preds, int *nPreds);
 
 // ------------------------------------------------------------
 // PROTOTIPOS: MONITOREO Y PREDICCION

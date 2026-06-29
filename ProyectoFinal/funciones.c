@@ -115,6 +115,49 @@ void cargarZonas(Zona *zonas, int *n)
     fread(n, sizeof(int), 1, f);
     fread(zonas, sizeof(Zona), *n, f);
     fclose(f);
+
+    // --- Error 3: verificar IDs duplicados despues de la carga ---
+    // Recorre todos los pares posibles; si encuentra ID igual elimina
+    // la segunda ocurrencia desplazando el arreglo y decrementando n
+    int eliminados = 0;
+    for (int i = 0; i < *n; i++)
+    {
+        for (int j = i + 1; j < *n; )
+        {
+            if (zonas[i].id == zonas[j].id)
+            {
+                printf("  [AVISO] ID duplicado al cargar: ID=%d ('%s') duplica a '%s'. Se elimina.\n",
+                       zonas[j].id, zonas[j].nombre, zonas[i].nombre);
+                // Desplazar el resto del arreglo una posicion hacia atras
+                for (int k = j; k < *n - 1; k++)
+                    zonas[k] = zonas[k + 1];
+                (*n)--;
+                eliminados++;
+                // No incrementar j: el nuevo elemento en pos j puede ser duplicado tambien
+            }
+            else
+            {
+                j++;
+            }
+        }
+    }
+    if (eliminados > 0)
+    {
+        printf("  [AVISO] %d zona(s) duplicada(s) eliminadas. Archivo corregido.\n", eliminados);
+        guardarZonas(zonas, *n);
+    }
+}
+
+// ------------------------------------------------------------
+// Retorna 1 si al menos una zona tiene hayMedicionHoy = 1
+// Se usa en main.c para bloquear el menu de monitoreo (Error 1)
+// ------------------------------------------------------------
+int hayAlgunaMedicionHoy(Zona *zonas, int n)
+{
+    for (int i = 0; i < n; i++)
+        if (zonas[i].hayMedicionHoy)
+            return 1;
+    return 0;
 }
 
 void guardarZonas(Zona *zonas, int n)
@@ -257,8 +300,14 @@ void registrarZona(Zona *zonas, int *n)
         }
     }
 
-    printf("  Nombre de la zona: ");
-    leerCadena(zonas[*n].nombre, 50);
+    // Error 5: validar nombre no vacio; pedir reingreso hasta recibir al menos 1 caracter
+    do
+    {
+        printf("  Nombre de la zona: ");
+        leerCadena(zonas[*n].nombre, 50);
+        if (zonas[*n].nombre[0] == '\0')
+            printf("  Error: el nombre no puede estar vacio. Ingrese al menos un caracter.\n");
+    } while (zonas[*n].nombre[0] == '\0');
     printf("  Temperatura actual (C, -10 a 50): ");
     zonas[*n].temperatura = validarFloat(-10.0f, 50.0f);
     printf("  Velocidad del viento (km/h, 0 a 150): ");
@@ -315,14 +364,41 @@ int buscarZona(Zona *zonas, int n)
     return -1;
 }
 
-void eliminarZona(Zona *zonas, int *n)
+void eliminarZona(Zona *zonas, int *n, Prediccion *preds, int *nPreds)
 {
     int idx = buscarZona(zonas, *n);
     if (idx == -1) return;
+
+    int idEliminado = zonas[idx].id; // Guardar el ID antes de borrar la zona
+
+    // Eliminar la zona desplazando el arreglo
     for (int i = idx; i < *n - 1; i++)
         zonas[i] = zonas[i + 1];
     (*n)--;
     guardarZonas(zonas, *n);
+    printf("  Zona [%d] eliminada del arreglo.\n", idEliminado);
+
+    // --- Error 4: eliminar predicciones huerfanas cuyo idZona coincide ---
+    int predEliminadas = 0;
+    for (int i = 0; i < *nPreds; )
+    {
+        if (preds[i].idZona == idEliminado)
+        {
+            // Desplazar el arreglo de predicciones
+            for (int k = i; k < *nPreds - 1; k++)
+                preds[k] = preds[k + 1];
+            (*nPreds)--;
+            predEliminadas++;
+            // No incrementar i: la nueva posicion i puede ser otro duplicado
+        }
+        else
+        {
+            i++;
+        }
+    }
+    if (predEliminadas > 0)
+        printf("  %d prediccion(es) huerfana(s) eliminadas del arreglo.\n", predEliminadas);
+
     printf("  Zona eliminada exitosamente.\n");
 }
 
@@ -520,6 +596,16 @@ Prediccion predecirManana(Zona *zona)
     if (!zona->hayMedicionHoy) return pred;
 
     int   dias     = zona->nMediciones;
+
+    // Error 2: requerir minimo MIN_DIAS_PREDICCION dias de historial
+    if (dias < MIN_DIAS_PREDICCION)
+    {
+        printf("  [ADVERTENCIA] Zona [%d] %s: solo tiene %d dia(s) de historial.\n",
+               zona->id, zona->nombre, dias);
+        printf("  Se necesitan minimo %d dias para calcular la prediccion.\n", MIN_DIAS_PREDICCION);
+        pred.idZona = -1; // Centinela: indica que la prediccion no fue calculada
+        return pred;
+    }
     float sumCO    = 0, sumSO2 = 0, sumNO2 = 0, sumPM25 = 0;
     float sumPesos = 0;
 
@@ -609,6 +695,14 @@ void mostrarPredicciones(Zona *zonas, int n, Prediccion *preds, int *nPreds)
         }
 
         preds[*nPreds] = predecirManana(&zonas[i]);
+
+        // Si predecirManana devolvio centinela -1 (menos de MIN_DIAS_PREDICCION dias)
+        // la advertencia ya se imprimio dentro de predecirManana; saltar esta zona
+        if (preds[*nPreds].idZona == -1)
+        {
+            printf("+------------------------------------------------------+\n");
+            continue;
+        }
 
         // Tabla de factores climaticos usados en el calculo
         printf("| Clima usado: Temp=%.1fC  Viento=%.1fkm/h  Hum=%.1f%%\n",
